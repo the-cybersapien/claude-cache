@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: Plugin (Claude Code ${{ matrix.claude-code }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The pinned build is the one claude-cache is tested against. `latest`
+        # warns early when the plugin API moves; it does not block a merge.
+        claude-code: ['2.1.292', 'latest']
+    continue-on-error: ${{ matrix.claude-code == 'latest' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        run: |
+          npm install -g @anthropic-ai/claude-code@${{ matrix.claude-code }}
+          claude --version
+          echo "CLAUDE_CONFIG_DIR=$RUNNER_TEMP/claude-config" >> "$GITHUB_ENV"
+
+      - name: Validate manifest and hooks module
+        run: |
+          claude plugin validate . --json > "$RUNNER_TEMP/validate.json" || true
+          python3 -I scripts/check_validate.py "$RUNNER_TEMP/validate.json"
+
+      - name: Load the plugin (writes its type declarations)
+        run: |
+          claude -p --plugin-dir . "/cache" < /dev/null
+          test -f .claude-plugin/types/claude-code/index.d.ts
+
+      - name: Type-check
+        run: npx -y -p typescript@5 tsc -p .
+
+      - name: Test
+        run: claude plugin test .

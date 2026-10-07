@@ -1,0 +1,67 @@
+{
+  "name": "claude-cache",
+  "version": "0.1.0",
+  "description": "Compacts an idle Claude Code session while its prompt cache is warm, with an AFK mode, a handoff note, and a cache TTL countdown in the status line and above the prompt.",
+  "author": {
+    "name": "Aditya Aggarwal",
+    "email": "aditya@cybersapien.xyz"
+  },
+  "homepage": "https://github.com/the-cybersapien/claude-cache",
+  "repository": "https://github.com/the-cybersapien/claude-cache",
+  "license": "Apache-2.0",
+  "types": "./types/index.d.ts",
+  "keywords": [
+    "prompt-cache",
+    "compaction",
+    "afk",
+    "statusline",
+    "cost"
+  ],
+  "userConfig": {
+    "autoCompactDefault": {
+      "type": "boolean",
+      "title": "Auto-compact new sessions",
+      "description": "Idle auto-compact setting for each new session. Change one session with /cache on, /cache off or the band's Auto button.",
+      "default": true
+    },
+    "compactAfterMinutes": {
+      "type": "number",
+      "title": "Compact after idle minutes",
+      "description": "Minutes after the last model request before an idle session compacts. Applies to the 1-hour cache, capped at the TTL minus 2 minutes.",
+      "default": 55,
+      "min": 5,
+      "max": 58
+    },
+    "minContextPercent": {
+      "type": "number",
+      "title": "Minimum context for auto-compact (%)",
+      "description": "Idle and AFK compaction wait until the context fills this share of the model's window. Smaller compactions save too little. /cache compact ignores this floor.",
+      "default": 30,
+      "min": 0,
+      "max": 95
+    },
+    "ttl": {
+      "type": "string",
+      "title": "Cache TTL",
+      "description": "auto reads the TTL from the transcript and environment. 1h or 5m forces one.",
+      "options": [
+        "auto",
+        "1h",
+        "5m"
+      ],
+      "default": "auto"
+    },
+    "showBand": {
+      "type": "boolean",
+      "title": "Show the cache band above the prompt",
+      "description": "The row with the countdown and the Auto, AFK and Compact now buttons, in the terminal and the desktop Code tab.",
+      "default": true
+    },
+    "showStatus": {
+      "type": "boolean",
+      "title": "Show the cache countdown in the status line",
+      "description": "A short entry such as \"cache 42m left · 180k · auto\".",
+      "default": true
+    }
+  }
+}

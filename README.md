@@ -1,8 +1,16 @@
-# claude-cache
+<p align="center"><img src="docs/logo.svg" width="128" alt="claude-cache logo: an amber countdown ring around three shortening bars"></p>
 
-[![CI](https://github.com/the-cybersapien/claude-cache/actions/workflows/ci.yml/badge.svg)](https://github.com/the-cybersapien/claude-cache/actions/workflows/ci.yml)
+<h1 align="center">claude-cache</h1>
+
+<p align="center">
+  <a href="https://github.com/the-cybersapien/claude-cache/actions/workflows/ci.yml"><img src="https://github.com/the-cybersapien/claude-cache/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
 claude-cache is a Claude Code plugin that compacts an idle session while its prompt cache is still warm.
+
+![A Claude Code session gone AFK: the claude-cache band shows the 1h cache warm with 41 minutes left and a compaction in 37 minutes, the handoff note below it, and the status entry under the prompt](docs/screenshot.png)
+
+▶ [Watch the 37-second demo on YouTube](https://youtu.be/WjQTau5LCMY)
 
 Anthropic holds a prompt cache for 5 minutes or 1 hour. Step away longer than that and your next message writes the whole context back into the cache, at 1.25x the input price for a 5-minute cache and 2x for a 1-hour one. On a 180k-token session with a 1-hour cache, you pay for 360k input tokens before the model reads a word of your question.
 

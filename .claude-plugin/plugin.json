@@ -1,7 +1,7 @@
 {
   "name": "cachekeeper",
   "displayName": "cachekeeper",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Compacts an idle Claude Code session while its prompt cache is warm, with an AFK mode, a handoff note, and a cache TTL countdown in the status line and above the prompt.",
   "author": {
     "name": "Aditya Aggarwal",

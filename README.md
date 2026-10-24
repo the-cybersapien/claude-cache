@@ -96,6 +96,33 @@ git clone https://github.com/the-cybersapien/claude-cache
 claude --plugin-dir ./claude-cache
 ```
 
+## Work machines
+
+If your company manages Claude Code on your machine, or you sign in with a Team or Enterprise plan, Claude Code runs a built-in security guard. It keeps plugins you install yourself out of some parts of a session, and claude-cache works around most of that:
+
+- **Your handoff note still reaches the model.** When you run `/compact` or Claude Code compacts on its own, the guard keeps claude-cache from adding the note to the summary. claude-cache attaches it to your next message instead. `/cache compact` and claude-cache's own idle compactions keep the note in the summary as usual.
+- **You still get one compaction per stretch of work.** claude-cache notices your `/compact` within 15 seconds and waits for new conversation before it compacts again.
+- **You lose the model-switch warning.** Switch models with a warm cache and no toast tells you what the rewrite costs.
+- **Claude may lose the `afk` tool** if your company restricts MCP tools. `/cache afk` and the band's **AFK** button still work, and claude-cache tells you once when this happens.
+
+Two gaps remain. If Claude Code compacts in the middle of a long turn, claude-cache may miss it and the note stays out of that summary. Right after a `/compact`, the band shows the old context size until Claude replies.
+
+### Getting the full plugin
+
+Your Claude Code administrator can install claude-cache so the guard trusts it. They copy this repository to a folder only admins can change, then add this to your managed settings:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "claude-cache": { "source": { "source": "directory", "path": "/path/to/claude-cache" } }
+  },
+  "enabledPlugins": { "claude-cache@claude-cache": true },
+  "appendPlugins": ["claude-cache@claude-cache"]
+}
+```
+
+A copy installed from GitHub always counts as one you installed yourself, whoever installed it.
+
 ## Limits
 
 - A compaction drops detail. claude-cache asks the summarizer to keep the open task, next steps, decisions and file paths, and Claude Code keeps the full transcript on disk.

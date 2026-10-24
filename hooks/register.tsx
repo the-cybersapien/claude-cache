@@ -36,11 +36,21 @@ const prefs = atom({ plugin: 'claude-cache', key: 'prefs' } as const, {
 const now = atom({ plugin: 'claude-cache', key: 'now' } as const, 0)
 const isHidden = atom({ plugin: 'claude-cache', key: 'isHidden' } as const, false)
 const note = atom({ plugin: 'claude-cache', key: 'note' } as const, null as CacheNote | null)
+const noteOwed = atom({ plugin: 'claude-cache', key: 'noteOwed' } as const, false)
 
 const NOTE_PROMPT =
   'claude-cache: the user is stepping away from this session. Write a handoff note of at most 120 words ' +
   'for whoever resumes it: the task and its goal, what is done, what is still running or half-done, ' +
   'the exact next steps, and any decision or constraint a summary must not lose. Plain text, no preamble.'
+
+/** $.store key, kept across sessions: claude-cache already told this machine that the guard holds its compaction hook. */
+const GUARD_SEEN_KEY = 'guard-seen'
+const GUARD_NOTICE =
+  "claude-cache: Claude Code's security guard keeps this plugin from adding your handoff note when you run /compact " +
+  'or Claude Code compacts on its own, so claude-cache attaches the note to your next message instead. ' +
+  'See "Work machines" in the claude-cache README.'
+/** $.store key: claude-cache already told this machine that Claude Code refused the afk tool. */
+const TOOL_REFUSED_KEY = 'tool-refused'
 
 const BASE_INSTRUCTIONS =
   'Keep the current task, its open next steps, decisions made, and file paths touched, so work resumes without re-reading.'
@@ -112,15 +122,22 @@ export function isWarm(lastRequestAt: number | null, ttl: CacheTtl, at: number):
   return lastRequestAt !== null && at < lastRequestAt + TTL_MS[ttl] - WARM_MARGIN_MS
 }
 
+const noteByline = (n: CacheNote) =>
+  `Handoff note written by ${n.source === 'you' ? 'the user' : 'the assistant'} at ${clock(n.at)}, when the user stepped away.`
+
 /** The summarizer's instructions with the handoff note folded in. */
 export function withNote(n: CacheNote | null, instructions: string | undefined): string | undefined {
   if (n === null) return instructions
-  const by = n.source === 'you' ? 'the user' : 'the assistant'
   const block =
-    `Handoff note written by ${by} at ${clock(n.at)}, when the user stepped away. ` +
+    `${noteByline(n)} ` +
     `Carry it into the summary verbatim under a "Handoff note" heading, and treat work after that time as newer:\n${n.text}`
 
   return instructions ? `${instructions}\n\n${block}` : block
+}
+
+/** The note as prompt context, for a compaction whose summary went without it. */
+export function noteContext(n: CacheNote): string {
+  return `claude-cache: this conversation was compacted without its handoff note. ${noteByline(n)} Treat work after that time as newer:\n${n.text}`
 }
 
 let opts: Options
@@ -191,6 +208,7 @@ export function compactBlocker(held: CacheInfo, at: number): string | null {
  * holds the turn (command.run), so requestCompact starts the compaction on a timer after the hook returns.
  */
 async function requestCompact($: $, why: string): Promise<string> {
+  await catchHiddenCompaction($)
   const blocked = compactBlocker(await read($, info), await $.clock.now())
   if (blocked !== null) return blocked
   $.clock.after(0, () => void compactNow($, why))
@@ -253,11 +271,33 @@ async function compactNow($: $, why: string) {
   }
 }
 
+/**
+ * Catches a compaction the session.compact hook never saw. Claude Code's sec-default guard, seated by
+ * managed settings or a Team or Enterprise login, skips a user-tier plugin's compaction hook, so
+ * /compact and auto-compact would leave compactedAt unset and the next tick would compact again.
+ * The live window's token count reads blank from a compaction until the next response.
+ */
+async function catchHiddenCompaction($: $, context?: { tokens?: number }) {
+  const live = context ?? (await $.session.usage().catch(() => null))?.context
+  if (live === undefined || live.tokens !== undefined) return
+  const i = await read($, info)
+  if (i.lastRequestAt === null || i.compactedAt !== null || i.isCompacting) return
+  const at = await $.clock.now()
+  await update($, info, x => (x.compactedAt === null ? { ...x, compactedAt: at } : x))
+  if ((await read($, note)) !== null) await update($, noteOwed, () => true)
+  if ((await $.store.get(GUARD_SEEN_KEY).catch(() => true)) !== true) {
+    $.ui.log(GUARD_NOTICE)
+    await $.store.set(GUARD_SEEN_KEY, true).catch(() => {})
+  }
+}
+
 async function tick($: $) {
   const at = await $.clock.now()
   await update($, now, () => at)
-  const window = (await $.session.usage().catch(() => null))?.context.window
+  const context = (await $.session.usage().catch(() => null))?.context
+  const window = context?.window
   if (window !== undefined && window > 0) await update($, info, x => (x.contextWindow === window ? x : { ...x, contextWindow: window }))
+  if (context !== undefined) await catchHiddenCompaction($, context)
   const i = await read($, info)
   const p = await read($, prefs)
 
@@ -346,6 +386,46 @@ async function setAfk($: $, isAfk: boolean, text?: string, source: CacheNoteSour
   return head
 }
 
+/** Registers the afk tool. Under the guard, Claude Code refuses it while managed settings hold allowedMcpServers. */
+async function registerAfkTool($: $) {
+  try {
+    await $.tool.register({
+      name: 'afk',
+      description:
+        'Tell claude-cache that the user is stepping away: going AFK, going to bed, or leaving a long or overnight job running. ' +
+        'While the user is away, claude-cache compacts the conversation a few minutes before the prompt cache expires, so their next turn skips a full cache rewrite. ' +
+        'Call with away=true when the user says they are leaving or will not reply for a while, and away=false when they say they are back. ' +
+        'With away=true, pass a note of at most 120 words: the task, what is done, what is still running, the exact next steps, and decisions to keep. ' +
+        'claude-cache adds the note to every compaction in this session.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          away: { type: 'boolean' },
+          note: { type: 'string', description: 'Handoff note for whoever resumes the session.' },
+        },
+        required: ['away'],
+      },
+    })
+    await $.store.delete(TOOL_REFUSED_KEY).catch(() => {})
+  } catch (error) {
+    if ((await $.store.get(TOOL_REFUSED_KEY).catch(() => true)) === true) return
+    const why = error instanceof Error ? error.message : String(error)
+    $.ui.log(`claude-cache: Claude Code refused the afk tool (${why}), so the model cannot turn AFK on. /cache afk and the band's AFK button still work.`)
+    await $.store.set(TOOL_REFUSED_KEY, true).catch(() => {})
+  }
+}
+
+/** The note as context for this prompt, when a hidden compaction went without it; null otherwise. */
+async function withOwedNote($: $, text: string): Promise<string | null> {
+  if (text.startsWith('/')) return null
+  await catchHiddenCompaction($)
+  if (!(await read($, noteOwed))) return null
+  await update($, noteOwed, () => false)
+  const n = await read($, note)
+
+  return n === null ? null : noteContext(n)
+}
+
 async function setAuto($: $, autoCompact: boolean) {
   await update($, prefs, p => ({ ...p, autoCompact }))
   // A tick may compact, and the engine refuses that inside the command or tool hook that called us.
@@ -376,28 +456,13 @@ export const register: Register = (on, options) => {
       argumentHint: '[status|on|off|afk [note]|back|note [text|clear]|compact|band]',
       immediate: true,
     }).catch(() => {})
-    await $.tool.register({
-      name: 'afk',
-      description:
-        'Tell claude-cache that the user is stepping away: going AFK, going to bed, or leaving a long or overnight job running. ' +
-        'While the user is away, claude-cache compacts the conversation a few minutes before the prompt cache expires, so their next turn skips a full cache rewrite. ' +
-        'Call with away=true when the user says they are leaving or will not reply for a while, and away=false when they say they are back. ' +
-        'With away=true, pass a note of at most 120 words: the task, what is done, what is still running, the exact next steps, and decisions to keep. ' +
-        'claude-cache adds the note to every compaction in this session.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          away: { type: 'boolean' },
-          note: { type: 'string', description: 'Handoff note for whoever resumes the session.' },
-        },
-        required: ['away'],
-      },
-    }).catch(() => {})
+    await registerAfkTool($)
 
     return started
   })
 
   // /compact and the engine's own auto-compact get the note too; our own $.session.compact skips this hook.
+  // Under Claude Code's sec-default guard this hook never runs, and catchHiddenCompaction stands in.
   on('session.compact', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     const n = await read($, note)
@@ -410,6 +475,8 @@ export const register: Register = (on, options) => {
         compactedAt: at,
         contextTokens: done.tokensAfter ?? i.contextTokens,
       }))
+      // The hook ran, so no guard holds it: a guard seated again later gets its notice again.
+      void $.store.delete(GUARD_SEEN_KEY).catch(() => {})
     }
     return done
   })
@@ -494,6 +561,9 @@ export const register: Register = (on, options) => {
           { timeoutMs: 8000 },
         )
       }
+      // A compaction the guard hid went without the note, so the next prompt to the model carries it.
+      const owed = await withOwedNote($, e.text).catch(() => null)
+      if (owed !== null) return next({ ...e, context: [...(e.context ?? []), owed] })
     }
     return next(e)
   })

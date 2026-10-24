@@ -4,6 +4,7 @@ import type { On } from 'claude-code'
 import { compactDueAfter, contextPercent, isWarm, transcriptPath, ttlFromTranscript, withNote } from '../hooks/register'
 
 const MINUTE = 60_000
+const TICK = 15_000
 
 const usage = (tokens: number) => ({
   input_tokens: 10,
@@ -13,14 +14,30 @@ const usage = (tokens: number) => ({
   model: 'claude-opus-5-5',
 })
 
+type World = {
+  /** The live window's token count: a response fills it, a compaction blanks it, as in Claude Code. */
+  tokens: number | undefined
+  logs: string[]
+  /** The context each prompt reached the engine with. */
+  contexts: (readonly string[] | undefined)[]
+}
+
 /** The engine beneath the plugin: a session, one model step per turn, and a compaction that counts its calls. */
-function world(on: On, compactions: string[], isBroken = false, window = 200_000) {
+function world(on: On, compactions: string[], isBroken = false, window = 200_000, isToolRefused = false): World {
+  const w: World = { tokens: undefined, logs: [], contexts: [] }
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
-  on('tool.register', ($, e) => ({ value: { tool: `mcp__claude-cache__${e.name}` } }))
+  on('tool.register', ($, e) => {
+    if (isToolRefused) throw new Error('refused by policy')
+    return { value: { tool: `mcp__claude-cache__${e.name}` } }
+  })
   on('settings.read', () => ({ value: {} }) as never)
   mock.env(on, {})
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window }, rateLimits: [] } }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window, tokens: w.tokens }, rateLimits: [] } }) as never)
+  on('ui.log', ($, e) => {
+    w.logs.push(e.text)
+    return { value: undefined } as never
+  })
   on('session.id', () => ({ value: 'session-1' }) as never)
   on('model.fork', () =>
     ({
@@ -35,13 +52,18 @@ function world(on: On, compactions: string[], isBroken = false, window = 200_000
   on('ui.toast', () => ({ value: undefined }) as never)
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
-  on('prompt.submit', ($, e) => ({ text: e.text }) as never)
+  on('prompt.submit', ($, e) => {
+    w.contexts.push(e.context)
+    return { text: e.text } as never
+  })
   on('session.compact', ($, e) => {
     compactions.push(e.instructions ?? '')
     if (isBroken) throw new Error('summarizer down')
+    w.tokens = undefined
     return { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 180_000, tokensAfter: 12_000 }
   })
   on('turn.step', async function* ($, e) {
+    w.tokens = 182_000
     return {
       turnId: e.turnId,
       index: e.index,
@@ -51,6 +73,7 @@ function world(on: On, compactions: string[], isBroken = false, window = 200_000
       usage: usage(180_000),
     } as never
   })
+  return w
 }
 
 const run = (args: string) => ({
@@ -344,4 +367,93 @@ test('auto-compact waits for 30% of the window', { options: { ttl: '1h', compact
   expect(compactions.length).toBe(0)
   // an explicit /cache compact is the person's call and ignores the floor
   expect((await $.command.run(run('compact'))).text).toContain('compacting while the cache is warm')
+})
+
+const prompt = (text: string) => ({ text, origin: { kind: 'composer' } }) as never
+const guardNotices = (w: World) => w.logs.filter(l => l.includes('security guard')).length
+
+// Claude Code's sec-default guard skips a user-tier plugin's session.compact hook. A /compact there
+// reaches the plugin only as a blank live token count, which the world models by clearing w.tokens.
+test('a compaction the guard hides from the hook still blocks the next idle compaction', { options: { ttl: '1h', compactAfterMinutes: 5 } }, async ($, on) => {
+  const compactions: string[] = []
+  const w = world(on, compactions)
+  mock.store(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await runTurn($)
+  await clock.advance(MINUTE)
+  w.tokens = undefined
+  expect((await $.command.run(run('compact'))).text).toContain('already compacted')
+  await clock.advance(120 * MINUTE)
+  expect(compactions.length).toBe(0)
+  // new conversation earns the next compaction, as after any other
+  await runTurn($)
+  await clock.advance(6 * MINUTE)
+  expect(compactions.length).toBe(1)
+})
+
+test('the next prompt after a hidden compaction carries the note, once', { options: { ttl: '1h' } }, async ($, on) => {
+  const compactions: string[] = []
+  const w = world(on, compactions)
+  mock.store(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.command.run(run('note keep the retry budget at 3'))
+  await runTurn($)
+  w.tokens = undefined
+  // typed before the next tick: the prompt checks for itself
+  await $.prompt.submit(prompt('carry on'))
+  expect(w.contexts.at(-1)?.join('\n')).toContain('keep the retry budget at 3')
+  await runTurn($)
+  await $.prompt.submit(prompt('and then?'))
+  expect(w.contexts.at(-1)).toBeUndefined()
+  expect(guardNotices(w)).toBe(1)
+  // a second hidden compaction sends the note again and tells the machine nothing new
+  w.tokens = undefined
+  await clock.advance(TICK)
+  await $.prompt.submit(prompt('go on'))
+  expect(w.contexts.at(-1)?.join('\n')).toContain('keep the retry budget at 3')
+  expect(guardNotices(w)).toBe(1)
+})
+
+test('a compaction the hook sees owes no note and logs nothing', { options: { ttl: '1h' } }, async ($, on) => {
+  const compactions: string[] = []
+  const w = world(on, compactions)
+  mock.store(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.command.run(run('note keep the retry budget at 3'))
+  await runTurn($)
+  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'hi', toolUses: [] }] } as never)
+  expect(compactions[0]).toContain('keep the retry budget at 3')
+  await clock.advance(TICK)
+  await $.prompt.submit(prompt('carry on'))
+  expect(w.contexts.at(-1)).toBeUndefined()
+  expect(guardNotices(w)).toBe(0)
+})
+
+test('a slash command after a hidden compaction leaves the note for the next real prompt', { options: { ttl: '1h' } }, async ($, on) => {
+  const compactions: string[] = []
+  const w = world(on, compactions)
+  mock.store(on)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.command.run(run('note keep the retry budget at 3'))
+  await runTurn($)
+  w.tokens = undefined
+  await $.prompt.submit(prompt('/cache'))
+  expect(w.contexts.at(-1)).toBeUndefined()
+  await $.prompt.submit(prompt('carry on'))
+  expect(w.contexts.at(-1)?.join('\n')).toContain('keep the retry budget at 3')
+})
+
+test('a refused afk tool is logged once per machine and /cache afk still works', { options: { ttl: '1h' } }, async ($, on) => {
+  const compactions: string[] = []
+  const w = world(on, compactions, false, 200_000, true)
+  mock.store(on)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  expect(w.logs.filter(l => l.includes('refused the afk tool')).length).toBe(1)
+  expect((await $.command.run(run('afk back at noon'))).text).toContain('AFK on')
 })

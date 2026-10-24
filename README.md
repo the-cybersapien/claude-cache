@@ -105,6 +105,8 @@ cachekeeper works through Claude Code and sends nothing over the network on its 
 - **Your Claude session.** When you go AFK without writing a note, cachekeeper asks your own session's model to write one. That request goes through Claude Code on your account, like any other turn. Compactions run through Claude Code's own compaction.
 - **Local storage.** It saves handoff notes and two one-time flags in Claude Code's plugin storage on your machine.
 
+The [privacy policy](PRIVACY.md) says the same in full. For help, see [SUPPORT.md](SUPPORT.md).
+
 ## Work machines
 
 If your company manages Claude Code on your machine, or you sign in with a Team or Enterprise plan, Claude Code runs a built-in security guard. It keeps plugins you install yourself out of some parts of a session, and cachekeeper works around most of that:

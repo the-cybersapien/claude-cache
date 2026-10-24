@@ -20,8 +20,8 @@ claude-cache is a Claude Code plugin of function hooks (a "mod"). It compacts an
 
 ```
 claude plugin test .                # the suite, on a mocked clock, store and env
-claude -p --plugin-dir . "/cache"   # headless smoke check; writes .claude-plugin/types/
-npx -p typescript@5 tsc -p .        # type-check, after one load
+claude -p --plugin-dir . "/cache"   # headless smoke check
+npx -p typescript@5 tsc -p .        # type-check, after one interactive session writes .claude-plugin/types/
 claude --plugin-dir .               # a real session
 ```
 
@@ -40,10 +40,10 @@ To watch idle auto-compact fire, pass `--settings '{"pluginConfigs":{"claude-cac
 
 ## CI
 
-`.github/workflows/ci.yml` runs on GitHub-hosted runners, free for this public repo. It tests against Claude Code `2.1.292`, which must pass, and `latest`, which may fail and warns you when the plugin API moves. Each job:
+`.github/workflows/ci.yml` runs on GitHub-hosted runners, free for this public repo. It tests against Claude Code `2.1.310`, which must pass, and `latest`, which may fail and warns you when the plugin API moves. Each job:
 
 1. validates, with `scripts/check_validate.py` accepting the reserved-name error and the root-CLAUDE.md warning and nothing else;
-2. loads the plugin once with `claude -p --plugin-dir . "/cache"`, so Claude Code writes `.claude-plugin/types/`;
+2. loads the plugin with `claude -p --plugin-dir . "/cache"`, then starts one interactive session under `script(1)` with a placeholder `ANTHROPIC_API_KEY` and pre-answered onboarding, trust and key prompts, because from 2.1.310 only an interactive start writes `.claude-plugin/types/`;
 3. type-checks;
 4. runs `claude plugin test .`.
 
@@ -64,7 +64,7 @@ No step calls the model, so CI needs no API key. After you verify a new Claude C
 - **Catch the compactions the hook misses.** On organization-managed machines Claude Code's guard `sec-default@builtin` skips a user-tier plugin's `session.compact` hook (and `classic.*`, `prompt.context`, `prompt.compose`). `catchHiddenCompaction` stands in: `$.session.usage()` reports no `context.tokens` from a compaction until the next response, so `lastRequestAt !== null && compactedAt === null && tokens === undefined` means a compaction the hook never saw. It sets `compactedAt` and `noteOwed`, and the next person prompt carries the note as `prompt.submit` context. `tick`, `requestCompact` and `prompt.submit` call it. Keep its `isCompacting` check: live, a tick can land between our own compaction finishing and `compactNow` setting `compactedAt`, which the harness cannot reproduce. Verified on 2.1.310: a `/model` switch keeps `tokens`, and `session.measure` does not fire after a compaction. `--plugin-dir` and marketplace installs always sit in the user tier; only the real `/Library/Application Support/ClaudeCode/managed-settings.json` seats the guard, not `CLAUDE_CODE_MANAGED_SETTINGS_PATH`.
 - **Fail open.** Hooks on `prompt.submit`, `classic.*` and `session.compact` call `next(e)` on every path. A broken claude-cache must not block a prompt or a compaction.
 
-## Mod API constraints (Claude Code 2.1.292)
+## Mod API constraints (Claude Code 2.1.310)
 
 - A function that receives `$` must be a top-level function declaration. `claude plugin validate` refuses `$` passed into closures.
 - `$.state` keys must be string literals declared in `types/index.d.ts`. Write state with `update($, atom, fn)`; the engine refuses `$.state.set` while a `ui.render` hook draws.

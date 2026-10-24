@@ -19,7 +19,7 @@ jobs:
       matrix:
         # The pinned build is the one claude-cache is tested against. `latest`
         # warns early when the plugin API moves; it does not block a merge.
-        claude-code: ['2.1.292', 'latest']
+        claude-code: ['2.1.310', 'latest']
     continue-on-error: ${{ matrix.claude-code == 'latest' }}
     steps:
       - uses: actions/checkout@v7
@@ -39,10 +39,26 @@ jobs:
           claude plugin validate . --json > "$RUNNER_TEMP/validate.json" || true
           python3 -I scripts/check_validate.py "$RUNNER_TEMP/validate.json"
 
-      - name: Load the plugin (writes its type declarations)
+      - name: Load the plugin headless
+        run: claude -p --plugin-dir . "/cache" < /dev/null
+
+      # Claude Code writes the plugin API declarations to .claude-plugin/types/ when an interactive
+      # session starts; from 2.1.310 a -p run no longer does. The session needs a terminal and a
+      # sign-in, so it runs under script(1) with a placeholder key. No step calls the model.
+      - name: Write the plugin API types
+        env:
+          ANTHROPIC_API_KEY: sk-ant-ci-placeholder-no-model-calls-0000
         run: |
-          claude -p --plugin-dir . "/cache" < /dev/null
-          test -f .claude-plugin/types/claude-code/index.d.ts
+          mkdir -p "$CLAUDE_CONFIG_DIR"
+          printf '{"hasCompletedOnboarding":true,"theme":"dark","customApiKeyResponses":{"approved":["%s"]},"projects":{"%s":{"hasTrustDialogAccepted":true}}}' \
+            "${ANTHROPIC_API_KEY: -20}" "$PWD" > "$CLAUDE_CONFIG_DIR/.claude.json"
+          sleep 120 | script -qfec 'claude --plugin-dir .' /dev/null > "$RUNNER_TEMP/session.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            test -f .claude-plugin/types/claude-code/index.d.ts && break
+            sleep 1
+          done
+          pkill -f 'claude --plugin-dir' || true
+          test -f .claude-plugin/types/claude-code/index.d.ts || { tail -c 4000 "$RUNNER_TEMP/session.log"; exit 1; }
 
       - name: Type-check
         run: npx -y -p typescript@5 tsc -p .

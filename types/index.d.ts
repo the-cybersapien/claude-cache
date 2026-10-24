@@ -48,6 +48,8 @@ declare module 'claude-code' {
       info: CacheInfo
       prefs: CachePrefs
       note: CacheNote | null
+      /** A compaction the guard hid from session.compact went without the note; the next prompt carries it. */
+      noteOwed: boolean
       now: number
       isHidden: boolean
     }

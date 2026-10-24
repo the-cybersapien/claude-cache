@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 (2026-10-24)
+
+- Work machines. On a machine where Claude Code runs its built-in security guard, claude-cache now notices your `/compact`, waits for new conversation before it compacts again, and attaches your handoff note to your next message. It tells you once when it first sees the guard.
+- claude-cache tells you once when Claude Code refuses its `afk` tool, where it used to fail silently.
+- README section "Work machines", with the settings an administrator adds to install the full plugin.
+
 ## 0.1.0 (2026-10-07)
 
 First release.

@@ -65,5 +65,8 @@
       "default": true
     }
   },
-  "icon": "./.claude-plugin/icon.png"
+  "icon": "./.claude-plugin/icon.png",
+  "documentationUrl": "https://github.com/the-cybersapien/claude-cache#readme",
+  "supportUrl": "https://github.com/the-cybersapien/claude-cache/blob/main/SUPPORT.md",
+  "privacyPolicyUrl": "https://github.com/the-cybersapien/claude-cache/blob/main/PRIVACY.md"
 }

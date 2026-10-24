@@ -89,13 +89,6 @@ claude plugin install cachekeeper@claude-cache
 
 In the desktop app, plugins run in the Code tab. Start a new Code session after you install.
 
-To run a checkout:
-
-```
-git clone https://github.com/the-cybersapien/claude-cache
-claude --plugin-dir ./claude-cache
-```
-
 Until version 0.3.0 the plugin was called claude-cache. If you installed it under that name, swap it for the new one:
 
 ```
@@ -107,7 +100,7 @@ claude plugin install cachekeeper@claude-cache
 
 cachekeeper works through Claude Code and sends nothing over the network on its own. It has no telemetry and no server.
 
-- **Your session transcript.** To learn whether your account gets a 5-minute or a 1-hour cache, cachekeeper reads the last 256 KB of the current session's transcript in `~/.claude/projects/`, by running `tail`. It reads no other files.
+- **Your session transcript.** To learn whether your account gets a 5-minute or a 1-hour cache, cachekeeper runs `tail -c 262144` on the current session's transcript in `~/.claude/projects/`, so it reads only the last 256 KB. It runs no other program and reads no other files.
 - **Settings and environment.** It reads the `promptCacheTtl` setting and four environment variables: `CLAUDE_CODE_PROMPT_CACHE_TTL`, `ENABLE_PROMPT_CACHING_1H`, `FORCE_PROMPT_CACHING_5M` and `HOME`.
 - **Your Claude session.** When you go AFK without writing a note, cachekeeper asks your own session's model to write one. That request goes through Claude Code on your account, like any other turn. Compactions run through Claude Code's own compaction.
 - **Local storage.** It saves handoff notes and two one-time flags in Claude Code's plugin storage on your machine.
@@ -147,14 +140,16 @@ A copy installed from GitHub always counts as one you installed yourself, whoeve
 
 ## Develop
 
+From a clone of this repository:
+
 ```
-claude -p --plugin-dir . "/cache"   # one load writes .claude-plugin/types/ for tsc
+claude --plugin-dir .               # a session with your checkout; it also writes .claude-plugin/types/ for tsc
 npx -p typescript@5 tsc -p .
 claude plugin test .
 claude plugin validate .
 ```
 
-CI runs these against Claude Code 2.1.292 and the latest release. [CLAUDE.md](CLAUDE.md) lists the design rules the code depends on.
+CI runs these against Claude Code 2.1.310 and the latest release. [CLAUDE.md](CLAUDE.md) lists the design rules the code depends on.
 
 ## License
 

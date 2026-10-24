@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 (2026-10-24)
+
+- Passes the Anthropic plugin directory's validation: the code no longer names a type `$`, which the directory reads as a call it can't check.
+- README: the exact `tail` command cachekeeper runs, and the checkout steps moved under Develop.
+
 ## 0.3.0 (2026-10-24)
 
 - Renamed to cachekeeper. Anthropic's plugin directory doesn't accept names that start with `claude-`. The repository and marketplace keep the name claude-cache, so you install `cachekeeper@claude-cache`. If you have claude-cache installed, uninstall it and install cachekeeper. Notes saved under the old name don't carry over.

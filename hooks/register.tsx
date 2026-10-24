@@ -64,7 +64,7 @@ type Options = {
   showStatus: boolean
 }
 
-type $ = EngineInterface
+type Engine = EngineInterface
 
 export const kTokens = (n: number) =>
   n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
@@ -156,7 +156,7 @@ function isAutoOn(p: CachePrefs) {
 return p.autoCompact ?? opts.autoCompactDefault
 }
 
-async function ttlFromSetup($: $): Promise<Pick<CacheInfo, 'ttl' | 'ttlSource'> | null> {
+async function ttlFromSetup($: Engine): Promise<Pick<CacheInfo, 'ttl' | 'ttlSource'> | null> {
   if (opts.ttl !== 'auto') return { ttl: opts.ttl, ttlSource: 'setting' }
   if (await $.env.get('FORCE_PROMPT_CACHING_5M')) return { ttl: '5m', ttlSource: 'env' }
   const named = await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL')
@@ -175,7 +175,7 @@ export function transcriptPath(home: string, root: string, sessionId: string): s
   return `${home}/.claude/projects/${root.replace(/[^a-zA-Z0-9]/g, '-')}/${sessionId}.jsonl`
 }
 
-async function detectTtl($: $, known?: string) {
+async function detectTtl($: Engine, known?: string) {
   const held = await read($, info)
   if (opts.ttl !== 'auto' || held.ttlSource === 'transcript' || held.ttlSource === 'engine') return
   const home = await $.env.get('HOME')
@@ -207,7 +207,7 @@ export function compactBlocker(held: CacheInfo, at: number): string | null {
  * Compacts from a command or a button. The engine refuses $.session.compact inside a hook that
  * holds the turn (command.run), so requestCompact starts the compaction on a timer after the hook returns.
  */
-async function requestCompact($: $, why: string): Promise<string> {
+async function requestCompact($: Engine, why: string): Promise<string> {
   await catchHiddenCompaction($)
   const blocked = compactBlocker(await read($, info), await $.clock.now())
   if (blocked !== null) return blocked
@@ -220,7 +220,7 @@ async function requestCompact($: $, why: string): Promise<string> {
  * Claims the right to compact: checks the blockers and sets isCompacting in one versioned write,
  * so two callers racing (a tick and a button press) cannot both pass. Returns the state claimed, or why not.
  */
-async function claimCompaction($: $): Promise<CacheInfo | string> {
+async function claimCompaction($: Engine): Promise<CacheInfo | string> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { value = EMPTY, version } = await $.state.get(infoRef)
     const blocked = compactBlocker(value, await $.clock.now())
@@ -233,7 +233,7 @@ async function claimCompaction($: $): Promise<CacheInfo | string> {
 }
 
 /** Runs the compaction. Call it from a timer, never from inside a hook: see requestCompact. */
-async function compactNow($: $, why: string) {
+async function compactNow($: Engine, why: string) {
   const held = await claimCompaction($)
   if (typeof held === 'string') return held
   try {
@@ -277,7 +277,7 @@ async function compactNow($: $, why: string) {
  * /compact and auto-compact would leave compactedAt unset and the next tick would compact again.
  * The live window's token count reads blank from a compaction until the next response.
  */
-async function catchHiddenCompaction($: $, context?: { tokens?: number }) {
+async function catchHiddenCompaction($: Engine, context?: { tokens?: number }) {
   const live = context ?? (await $.session.usage().catch(() => null))?.context
   if (live === undefined || live.tokens !== undefined) return
   const i = await read($, info)
@@ -291,7 +291,7 @@ async function catchHiddenCompaction($: $, context?: { tokens?: number }) {
   }
 }
 
-async function tick($: $) {
+async function tick($: Engine) {
   const at = await $.clock.now()
   await update($, now, () => at)
   const context = (await $.session.usage().catch(() => null))?.context
@@ -337,7 +337,7 @@ function isFresh(n: CacheNote | null, i: CacheInfo) {
   return n !== null && (i.lastRequestAt === null || n.at >= i.lastRequestAt)
 }
 
-async function saveNote($: $, text: string, source: CacheNoteSource) {
+async function saveNote($: Engine, text: string, source: CacheNoteSource) {
   const saved: CacheNote = { text: text.trim(), source, at: await $.clock.now() }
   await update($, note, () => saved)
   await $.store.set(`note:${await $.session.id()}`, saved).catch(() => {})
@@ -345,13 +345,13 @@ async function saveNote($: $, text: string, source: CacheNoteSource) {
   return saved
 }
 
-async function clearNote($: $) {
+async function clearNote($: Engine) {
   await update($, note, () => null)
   await $.store.delete(`note:${await $.session.id()}`).catch(() => {})
 }
 
 /** Asks the session's own transcript for a handoff note. The fork reads the warm cache, which also restarts its TTL. */
-async function writeNote($: $): Promise<CacheNote | null> {
+async function writeNote($: Engine): Promise<CacheNote | null> {
   const sentAt = await $.clock.now()
   const reply = await $.model.fork({ prompt: NOTE_PROMPT })
   if (!reply.isAnswered) return null
@@ -364,7 +364,7 @@ async function writeNote($: $): Promise<CacheNote | null> {
   return saveNote($, reply.text, 'generated')
 }
 
-async function setAfk($: $, isAfk: boolean, text?: string, source: CacheNoteSource = 'you') {
+async function setAfk($: Engine, isAfk: boolean, text?: string, source: CacheNoteSource = 'you') {
   await update($, prefs, p => ({ ...p, isAfk }))
   if (!isAfk) {
     $.clock.after(0, () => void tick($))
@@ -387,7 +387,7 @@ async function setAfk($: $, isAfk: boolean, text?: string, source: CacheNoteSour
 }
 
 /** Registers the afk tool. Under the guard, Claude Code refuses it while managed settings hold allowedMcpServers. */
-async function registerAfkTool($: $) {
+async function registerAfkTool($: Engine) {
   try {
     await $.tool.register({
       name: 'afk',
@@ -416,7 +416,7 @@ async function registerAfkTool($: $) {
 }
 
 /** The note as context for this prompt, when a hidden compaction went without it; null otherwise. */
-async function withOwedNote($: $, text: string): Promise<string | null> {
+async function withOwedNote($: Engine, text: string): Promise<string | null> {
   if (text.startsWith('/')) return null
   await catchHiddenCompaction($)
   if (!(await read($, noteOwed))) return null
@@ -426,7 +426,7 @@ async function withOwedNote($: $, text: string): Promise<string | null> {
   return n === null ? null : noteContext(n)
 }
 
-async function setAuto($: $, autoCompact: boolean) {
+async function setAuto($: Engine, autoCompact: boolean) {
   await update($, prefs, p => ({ ...p, autoCompact }))
   // A tick may compact, and the engine refuses that inside the command or tool hook that called us.
   $.clock.after(0, () => void tick($))
@@ -654,7 +654,7 @@ export const register: Register = (on, options) => {
   })
 }
 
-async function cacheCommand($: $, argText: string): Promise<string> {
+async function cacheCommand($: Engine, argText: string): Promise<string> {
   const args = argText.trim()
   const word = (args.split(/\s+/)[0] ?? '').toLowerCase()
   const rest = args.slice(word.length).trim()

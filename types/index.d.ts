@@ -44,7 +44,7 @@ export type CachePrefs = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'claude-cache': {
+    'cachekeeper': {
       info: CacheInfo
       prefs: CachePrefs
       note: CacheNote | null

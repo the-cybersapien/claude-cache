@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 (2026-10-24)
+
+- Renamed to cachekeeper. Anthropic's plugin directory doesn't accept names that start with `claude-`. The repository and marketplace keep the name claude-cache, so you install `cachekeeper@claude-cache`. If you have claude-cache installed, uninstall it and install cachekeeper. Notes saved under the old name don't carry over.
+- A plugin icon, and a README section on what cachekeeper reads and runs.
+
 ## 0.2.0 (2026-10-24)
 
 - Work machines. On a machine where Claude Code runs its built-in security guard, claude-cache now notices your `/compact`, waits for new conversation before it compacts again, and attaches your handoff note to your next message. It tells you once when it first sees the guard.

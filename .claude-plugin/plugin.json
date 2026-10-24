@@ -1,6 +1,7 @@
 {
-  "name": "claude-cache",
-  "version": "0.2.0",
+  "name": "cachekeeper",
+  "displayName": "cachekeeper",
+  "version": "0.3.0",
   "description": "Compacts an idle Claude Code session while its prompt cache is warm, with an AFK mode, a handoff note, and a cache TTL countdown in the status line and above the prompt.",
   "author": {
     "name": "Aditya Aggarwal",
@@ -63,5 +64,6 @@
       "description": "A short entry such as \"cache 42m left · 180k · auto\".",
       "default": true
     }
-  }
+  },
+  "icon": "./.claude-plugin/icon.png"
 }

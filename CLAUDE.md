@@ -1,6 +1,6 @@
-# claude-cache
+# cachekeeper
 
-claude-cache is a Claude Code plugin of function hooks (a "mod"). It compacts an idle session while the prompt cache is still warm, runs an AFK mode with a handoff note, and shows the cache TTL in the status line and in a band above the prompt, in the terminal and the desktop Code tab.
+cachekeeper is a Claude Code plugin of function hooks (a "mod"). It compacts an idle session while the prompt cache is still warm, runs an AFK mode with a handoff note, and shows the cache TTL in the status line and in a band above the prompt, in the terminal and the desktop Code tab.
 
 ## Layout
 
@@ -10,8 +10,8 @@ claude-cache is a Claude Code plugin of function hooks (a "mod"). It compacts an
 | `.claude-plugin/marketplace.json` | the one-plugin marketplace that `/plugin install` reads |
 | `hooks/hooks.json` | names the hooks module |
 | `hooks/register.tsx` | the plugin: helpers at the top, `register()` with every hook at the bottom |
-| `types/index.d.ts` | the `$.state` contract, every value under `PluginState['claude-cache']` |
-| `tests/claude-cache.test.ts` | the `claude plugin test` suite |
+| `types/index.d.ts` | the `$.state` contract, every value under `PluginState['cachekeeper']` |
+| `tests/cachekeeper.test.ts` | the `claude plugin test` suite |
 | `scripts/check_validate.py` | CI gate over `claude plugin validate --json` |
 | `.github/workflows/ci.yml` | CI |
 | `.claude-plugin/types/` | API declarations Claude Code writes at each load; gitignored, never edit |
@@ -36,13 +36,13 @@ tmux send-keys -t cc "/cache compact" Enter                    # expect: a compa
 tmux capture-pane -t cc -p; tmux kill-session -t cc
 ```
 
-To watch idle auto-compact fire, pass `--settings '{"pluginConfigs":{"claude-cache@inline":{"options":{"compactAfterMinutes":5,"minContextPercent":5}}}}'` and wait six minutes.
+To watch idle auto-compact fire, pass `--settings '{"pluginConfigs":{"cachekeeper@inline":{"options":{"compactAfterMinutes":5,"minContextPercent":5}}}}'` and wait six minutes.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on GitHub-hosted runners, free for this public repo. It tests against Claude Code `2.1.310`, which must pass, and `latest`, which may fail and warns you when the plugin API moves. Each job:
 
-1. validates, with `scripts/check_validate.py` accepting the reserved-name error and the root-CLAUDE.md warning and nothing else;
+1. validates, with `scripts/check_validate.py` accepting the root-CLAUDE.md warning and nothing else;
 2. loads the plugin with `claude -p --plugin-dir . "/cache"`, then starts one interactive session under `script(1)` with a placeholder `ANTHROPIC_API_KEY` and pre-answered onboarding, trust and key prompts, because from 2.1.310 only an interactive start writes `.claude-plugin/types/`;
 3. type-checks;
 4. runs `claude plugin test .`.
@@ -62,7 +62,7 @@ No step calls the model, so CI needs no API key. After you verify a new Claude C
 - **Per-session switches live in `$.state`.** `userConfig.autoCompactDefault` seeds new sessions and nothing more. `$.state` survives a hot reload; module variables reset.
 - **The handoff note reaches every compaction.** `compactNow` passes `withNote` itself, because the engine skips a plugin's own `session.compact` hook for that plugin's call. `/compact` and Claude Code's auto-compact get the note through the hook. `$.store` keeps the note under `note:<sessionId>`, so a resumed session finds it.
 - **Catch the compactions the hook misses.** On organization-managed machines Claude Code's guard `sec-default@builtin` skips a user-tier plugin's `session.compact` hook (and `classic.*`, `prompt.context`, `prompt.compose`). `catchHiddenCompaction` stands in: `$.session.usage()` reports no `context.tokens` from a compaction until the next response, so `lastRequestAt !== null && compactedAt === null && tokens === undefined` means a compaction the hook never saw. It sets `compactedAt` and `noteOwed`, and the next person prompt carries the note as `prompt.submit` context. `tick`, `requestCompact` and `prompt.submit` call it. Keep its `isCompacting` check: live, a tick can land between our own compaction finishing and `compactNow` setting `compactedAt`, which the harness cannot reproduce. Verified on 2.1.310: a `/model` switch keeps `tokens`, and `session.measure` does not fire after a compaction. `--plugin-dir` and marketplace installs always sit in the user tier; only the real `/Library/Application Support/ClaudeCode/managed-settings.json` seats the guard, not `CLAUDE_CODE_MANAGED_SETTINGS_PATH`.
-- **Fail open.** Hooks on `prompt.submit`, `classic.*` and `session.compact` call `next(e)` on every path. A broken claude-cache must not block a prompt or a compaction.
+- **Fail open.** Hooks on `prompt.submit`, `classic.*` and `session.compact` call `next(e)` on every path. A broken cachekeeper must not block a prompt or a compaction.
 
 ## Mod API constraints (Claude Code 2.1.310)
 
@@ -79,14 +79,16 @@ No step calls the model, so CI needs no API key. After you verify a new Claude C
 
 ## Naming
 
-The owner chose the id `claude-cache`. `claude plugin validate` reports names starting with `claude-` as reserved, yet `claude plugin install claude-cache@claude-cache` from this repo's marketplace succeeded on 7 October 2026, as do `--plugin-dir` and `CLAUDE_CODE_PLUGIN_DIRS`.
+The plugin is `cachekeeper`; the repository and its marketplace stay `claude-cache`, so the install id is `cachekeeper@claude-cache`. Until 0.3.0 the plugin was named `claude-cache`. Anthropic's directory refuses plugin names starting with `claude-` (and `claude plugin validate` reports it as an error), so the owner renamed it on 24 October 2026. The plugin name is also the namespace of `$.state` (`PluginState['cachekeeper']`), `$.store` and the tool `mcp__cachekeeper__afk`.
+
+The directory listing reads `.claude-plugin/icon.png` (a copy of `docs/logo.png`, 512×512) only on the first save in the portal. Keep the README section "What cachekeeper reads and runs" in step with the code: the directory's security scan holds behaviour the README doesn't disclose.
 
 ## Keepalive pings
 
-claude-cache sends none. On Pro and Max plans each ping spends quota, and Anthropic's consumer terms restrict automated traffic. If you add pings later, make them opt-in and limit them to API-key users.
+cachekeeper sends none. On Pro and Max plans each ping spends quota, and Anthropic's consumer terms restrict automated traffic. If you add pings later, make them opt-in and limit them to API-key users.
 
 ## Conventions
 
 - Write prose (README, toasts, command output) in plain, active English, with no em dashes and no filler.
 - Commits carry no Claude attribution trailers.
-- Every behaviour change gets a test in `tests/claude-cache.test.ts`, on the mocked clock.
+- Every behaviour change gets a test in `tests/cachekeeper.test.ts`, on the mocked clock.

@@ -29,7 +29,7 @@ function world(on: On, compactions: string[], isBroken = false, window = 200_000
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('tool.register', ($, e) => {
     if (isToolRefused) throw new Error('refused by policy')
-    return { value: { tool: `mcp__claude-cache__${e.name}` } }
+    return { value: { tool: `mcp__cachekeeper__${e.name}` } }
   })
   on('settings.read', () => ({ value: {} }) as never)
   mock.env(on, {})
@@ -154,7 +154,7 @@ test('AFK on a 5m cache compacts before it lapses', { options: { ttl: '5m' } }, 
   world(on, compactions)
   const clock = mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
-  const said = await $.tool.call({ tool: 'mcp__claude-cache__afk', away: true } as never)
+  const said = await $.tool.call({ tool: 'mcp__cachekeeper__afk', away: true } as never)
   expect(JSON.stringify(said)).toContain('AFK on')
   await runTurn($)
   await clock.advance(3 * MINUTE)
@@ -181,7 +181,7 @@ test('the band draws on terminal and desktop and its Auto button flips the sessi
   await runTurn($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({
-      plugin: 'claude-cache',
+      plugin: 'cachekeeper',
       surface,
       component: 'AbovePrompt',
       props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120 },

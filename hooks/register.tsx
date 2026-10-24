@@ -8,7 +8,7 @@ const TTL_MS: Record<CacheTtl, number> = { '5m': 5 * MINUTE, '1h': 60 * MINUTE }
 const TICK_MS = 15_000
 /** A compaction must start this long before the cache lapses, or it would read a cold prefix. */
 const WARM_MARGIN_MS = 30_000
-const TOOL = 'mcp__claude-cache__afk'
+const TOOL = 'mcp__cachekeeper__afk'
 
 const EMPTY: CacheInfo = {
   lastRequestAt: null,
@@ -27,29 +27,29 @@ const EMPTY: CacheInfo = {
   tokensSaved: 0,
 }
 
-const infoRef = { plugin: 'claude-cache', key: 'info' } as const
+const infoRef = { plugin: 'cachekeeper', key: 'info' } as const
 const info = atom(infoRef, EMPTY)
-const prefs = atom({ plugin: 'claude-cache', key: 'prefs' } as const, {
+const prefs = atom({ plugin: 'cachekeeper', key: 'prefs' } as const, {
   autoCompact: null,
   isAfk: false,
 } as CachePrefs)
-const now = atom({ plugin: 'claude-cache', key: 'now' } as const, 0)
-const isHidden = atom({ plugin: 'claude-cache', key: 'isHidden' } as const, false)
-const note = atom({ plugin: 'claude-cache', key: 'note' } as const, null as CacheNote | null)
-const noteOwed = atom({ plugin: 'claude-cache', key: 'noteOwed' } as const, false)
+const now = atom({ plugin: 'cachekeeper', key: 'now' } as const, 0)
+const isHidden = atom({ plugin: 'cachekeeper', key: 'isHidden' } as const, false)
+const note = atom({ plugin: 'cachekeeper', key: 'note' } as const, null as CacheNote | null)
+const noteOwed = atom({ plugin: 'cachekeeper', key: 'noteOwed' } as const, false)
 
 const NOTE_PROMPT =
-  'claude-cache: the user is stepping away from this session. Write a handoff note of at most 120 words ' +
+  'cachekeeper: the user is stepping away from this session. Write a handoff note of at most 120 words ' +
   'for whoever resumes it: the task and its goal, what is done, what is still running or half-done, ' +
   'the exact next steps, and any decision or constraint a summary must not lose. Plain text, no preamble.'
 
-/** $.store key, kept across sessions: claude-cache already told this machine that the guard holds its compaction hook. */
+/** $.store key, kept across sessions: cachekeeper already told this machine that the guard holds its compaction hook. */
 const GUARD_SEEN_KEY = 'guard-seen'
 const GUARD_NOTICE =
-  "claude-cache: Claude Code's security guard keeps this plugin from adding your handoff note when you run /compact " +
-  'or Claude Code compacts on its own, so claude-cache attaches the note to your next message instead. ' +
-  'See "Work machines" in the claude-cache README.'
-/** $.store key: claude-cache already told this machine that Claude Code refused the afk tool. */
+  "cachekeeper: Claude Code's security guard keeps this plugin from adding your handoff note when you run /compact " +
+  'or Claude Code compacts on its own, so cachekeeper attaches the note to your next message instead. ' +
+  'See "Work machines" in the cachekeeper README.'
+/** $.store key: cachekeeper already told this machine that Claude Code refused the afk tool. */
 const TOOL_REFUSED_KEY = 'tool-refused'
 
 const BASE_INSTRUCTIONS =
@@ -137,7 +137,7 @@ export function withNote(n: CacheNote | null, instructions: string | undefined):
 
 /** The note as prompt context, for a compaction whose summary went without it. */
 export function noteContext(n: CacheNote): string {
-  return `claude-cache: this conversation was compacted without its handoff note. ${noteByline(n)} Treat work after that time as newer:\n${n.text}`
+  return `cachekeeper: this conversation was compacted without its handoff note. ${noteByline(n)} Treat work after that time as newer:\n${n.text}`
 }
 
 let opts: Options
@@ -192,12 +192,12 @@ async function detectTtl($: $, known?: string) {
 
 /** Why the session cannot compact right now, or null when it can. */
 export function compactBlocker(held: CacheInfo, at: number): string | null {
-  if (held.isCompacting || held.isTurnRunning) return 'claude-cache: a turn or a compaction is running.'
-  if (held.compactedAt !== null) return 'claude-cache: already compacted. The next compaction waits for new conversation.'
-  if (held.lastRequestAt === null) return 'claude-cache: nothing to compact before the first response.'
-  // A cold compaction re-reads the whole context at full price, the cost claude-cache exists to avoid.
+  if (held.isCompacting || held.isTurnRunning) return 'cachekeeper: a turn or a compaction is running.'
+  if (held.compactedAt !== null) return 'cachekeeper: already compacted. The next compaction waits for new conversation.'
+  if (held.lastRequestAt === null) return 'cachekeeper: nothing to compact before the first response.'
+  // A cold compaction re-reads the whole context at full price, the cost cachekeeper exists to avoid.
   if (!isWarm(held.lastRequestAt, held.ttl, at)) {
-    return `claude-cache: the ${held.ttl} cache is cold. A compaction now would pay the full rewrite, so claude-cache skips it.`
+    return `cachekeeper: the ${held.ttl} cache is cold. A compaction now would pay the full rewrite, so cachekeeper skips it.`
   }
 
   return null
@@ -213,7 +213,7 @@ async function requestCompact($: $, why: string): Promise<string> {
   if (blocked !== null) return blocked
   $.clock.after(0, () => void compactNow($, why))
 
-  return 'claude-cache: compacting while the cache is warm. A toast reports the result.'
+  return 'cachekeeper: compacting while the cache is warm. A toast reports the result.'
 }
 
 /**
@@ -229,7 +229,7 @@ async function claimCompaction($: $): Promise<CacheInfo | string> {
     if (isSet) return value
   }
 
-  return 'claude-cache: the session state kept changing; not compacting.'
+  return 'cachekeeper: the session state kept changing; not compacting.'
 }
 
 /** Runs the compaction. Call it from a timer, never from inside a hook: see requestCompact. */
@@ -242,8 +242,8 @@ async function compactNow($: $, why: string) {
     })
     if (done.skip !== undefined) {
       await update($, info, i => ({ ...i, isCompacting: false }))
-      $.ui.toast(`claude-cache: compaction skipped: ${done.skip}`, { timeoutMs: 10_000 })
-      return `claude-cache: compaction skipped: ${done.skip}`
+      $.ui.toast(`cachekeeper: compaction skipped: ${done.skip}`, { timeoutMs: 10_000 })
+      return `cachekeeper: compaction skipped: ${done.skip}`
     }
     const before = done.tokensBefore ?? held.contextTokens
     const after = done.tokensAfter ?? 0
@@ -258,14 +258,14 @@ async function compactNow($: $, why: string) {
     }))
     const warmRead = done.usage?.cache_read_input_tokens
     const proof = warmRead === undefined ? 'while the cache was warm' : `reading ${kTokens(warmRead)} from the warm cache`
-    const text = `claude-cache: ${why}; compacted ${kTokens(before)} to ${kTokens(after)} tokens, ${proof}.`
+    const text = `cachekeeper: ${why}; compacted ${kTokens(before)} to ${kTokens(after)} tokens, ${proof}.`
     $.ui.toast(text, { timeoutMs: 10_000 })
     $.clock.after(0, () => void tick($))
 
     return text
   } catch (error) {
     await update($, info, i => ({ ...i, isCompacting: false }))
-    const text = `claude-cache: compaction failed: ${error instanceof Error ? error.message : String(error)}`
+    const text = `cachekeeper: compaction failed: ${error instanceof Error ? error.message : String(error)}`
     $.ui.toast(text, { timeoutMs: 10_000 })
     return text
   }
@@ -368,7 +368,7 @@ async function setAfk($: $, isAfk: boolean, text?: string, source: CacheNoteSour
   await update($, prefs, p => ({ ...p, isAfk }))
   if (!isAfk) {
     $.clock.after(0, () => void tick($))
-    return 'claude-cache: AFK off.'
+    return 'cachekeeper: AFK off.'
   }
 
   let saved = text !== undefined && text.trim() !== '' ? await saveNote($, text, source) : null
@@ -379,9 +379,9 @@ async function setAfk($: $, isAfk: boolean, text?: string, source: CacheNoteSour
   $.clock.after(0, () => void tick($))
 
   const head =
-    'claude-cache: AFK on. The session compacts before its prompt cache expires. Your next prompt turns AFK off.'
+    'cachekeeper: AFK on. The session compacts before its prompt cache expires. Your next prompt turns AFK off.'
   if (saved !== null) return `${head}\nHandoff note, added to every compaction:\n${saved.text}`
-  if (i.isTurnRunning) return `${head}\nclaude-cache writes the handoff note after this turn, just before it compacts.`
+  if (i.isTurnRunning) return `${head}\ncachekeeper writes the handoff note after this turn, just before it compacts.`
 
   return head
 }
@@ -392,11 +392,11 @@ async function registerAfkTool($: $) {
     await $.tool.register({
       name: 'afk',
       description:
-        'Tell claude-cache that the user is stepping away: going AFK, going to bed, or leaving a long or overnight job running. ' +
-        'While the user is away, claude-cache compacts the conversation a few minutes before the prompt cache expires, so their next turn skips a full cache rewrite. ' +
+        'Tell cachekeeper that the user is stepping away: going AFK, going to bed, or leaving a long or overnight job running. ' +
+        'While the user is away, cachekeeper compacts the conversation a few minutes before the prompt cache expires, so their next turn skips a full cache rewrite. ' +
         'Call with away=true when the user says they are leaving or will not reply for a while, and away=false when they say they are back. ' +
         'With away=true, pass a note of at most 120 words: the task, what is done, what is still running, the exact next steps, and decisions to keep. ' +
-        'claude-cache adds the note to every compaction in this session.',
+        'cachekeeper adds the note to every compaction in this session.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -410,7 +410,7 @@ async function registerAfkTool($: $) {
   } catch (error) {
     if ((await $.store.get(TOOL_REFUSED_KEY).catch(() => true)) === true) return
     const why = error instanceof Error ? error.message : String(error)
-    $.ui.log(`claude-cache: Claude Code refused the afk tool (${why}), so the model cannot turn AFK on. /cache afk and the band's AFK button still work.`)
+    $.ui.log(`cachekeeper: Claude Code refused the afk tool (${why}), so the model cannot turn AFK on. /cache afk and the band's AFK button still work.`)
     await $.store.set(TOOL_REFUSED_KEY, true).catch(() => {})
   }
 }
@@ -431,7 +431,7 @@ async function setAuto($: $, autoCompact: boolean) {
   // A tick may compact, and the engine refuses that inside the command or tool hook that called us.
   $.clock.after(0, () => void tick($))
 
-  return `claude-cache: idle auto-compact ${autoCompact ? 'on' : 'off'} for this session.`
+  return `cachekeeper: idle auto-compact ${autoCompact ? 'on' : 'off'} for this session.`
 }
 
 export const register: Register = (on, options) => {
@@ -532,7 +532,7 @@ export const register: Register = (on, options) => {
     await update($, info, i => ({ ...i, ttl: e.cache_ttl, ttlSource: 'engine' as const }))
     if (e.prompt_cache_warm && e.context_tokens > 0) {
       $.ui.toast(
-        `claude-cache: switching to ${e.to_model} drops a warm cache. Your next turn rewrites ${kTokens(e.context_tokens)} tokens (about $${e.estimated_cache_write_usd.toFixed(2)} at API prices).`,
+        `cachekeeper: switching to ${e.to_model} drops a warm cache. Your next turn rewrites ${kTokens(e.context_tokens)} tokens (about $${e.estimated_cache_write_usd.toFixed(2)} at API prices).`,
         { timeoutMs: 10_000 },
       )
     }
@@ -546,7 +546,7 @@ export const register: Register = (on, options) => {
         await update($, prefs, x => ({ ...x, isAfk: false }))
         const n = await read($, note)
         if (n !== null) {
-          $.ui.toast(`claude-cache: welcome back. Your note from ${clock(n.at)}: ${n.text}`, { timeoutMs: 15_000 })
+          $.ui.toast(`cachekeeper: welcome back. Your note from ${clock(n.at)}: ${n.text}`, { timeoutMs: 15_000 })
         }
       }
       const i = await read($, info)
@@ -557,7 +557,7 @@ export const register: Register = (on, options) => {
         at >= i.lastRequestAt + TTL_MS[i.ttl]
       if (isCold && isWorthCompacting(i) && !e.text.startsWith('/')) {
         $.ui.toast(
-          `claude-cache: the ${i.ttl} cache expired ${minutesLeft(at - (i.lastRequestAt ?? at) - TTL_MS[i.ttl])} ago. This message rewrites about ${kTokens(i.contextTokens)} tokens.`,
+          `cachekeeper: the ${i.ttl} cache expired ${minutesLeft(at - (i.lastRequestAt ?? at) - TTL_MS[i.ttl])} ago. This message rewrites about ${kTokens(i.contextTokens)} tokens.`,
           { timeoutMs: 8000 },
         )
       }
@@ -650,7 +650,7 @@ export const register: Register = (on, options) => {
   // The engine labels a command's output with the plugin's name already.
   on('command.run', { command: 'cache' }, async ($, e) => {
     const answer = await cacheCommand($, e.args)
-    return { text: answer.replace(/^claude-cache: /, '') }
+    return { text: answer.replace(/^cachekeeper: /, '') }
   })
 }
 
@@ -663,21 +663,21 @@ async function cacheCommand($: $, argText: string): Promise<string> {
   if (word === 'note') {
     if (rest.toLowerCase() === 'clear') {
       await clearNote($)
-      return 'claude-cache: note cleared.'
+      return 'cachekeeper: note cleared.'
     }
     if (rest !== '') {
       const saved = await saveNote($, rest, 'you')
-      return `claude-cache: note saved at ${clock(saved.at)}. Every compaction in this session carries it.`
+      return `cachekeeper: note saved at ${clock(saved.at)}. Every compaction in this session carries it.`
     }
     const n = await read($, note)
-    return n === null ? 'claude-cache: no note yet. /cache note <text> saves one.' : `Note from ${clock(n.at)} (${n.source}):\n${n.text}`
+    return n === null ? 'cachekeeper: no note yet. /cache note <text> saves one.' : `Note from ${clock(n.at)} (${n.source}):\n${n.text}`
   }
   if (word === 'back') return await setAfk($, false)
   if (word === 'compact') return await requestCompact($, 'you asked')
   if (word === 'band') {
     const hidden = await read($, isHidden)
     await update($, isHidden, () => !hidden)
-    return `claude-cache: band ${hidden ? 'shown' : 'hidden'}.`
+    return `cachekeeper: band ${hidden ? 'shown' : 'hidden'}.`
   }
 
   const i = await read($, info)

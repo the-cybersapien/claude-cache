@@ -1,13 +1,13 @@
 {
   "name": "claude-cache",
-  "description": "claude-cache: compact idle Claude Code sessions while the prompt cache is warm.",
+  "description": "cachekeeper: compact idle Claude Code sessions while the prompt cache is warm.",
   "owner": {
     "name": "Aditya Aggarwal",
     "url": "https://github.com/the-cybersapien"
   },
   "plugins": [
     {
-      "name": "claude-cache",
+      "name": "cachekeeper",
       "source": "./"
     }
   ]

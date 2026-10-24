@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The pinned build is the one claude-cache is tested against. `latest`
+        # The pinned build is the one cachekeeper is tested against. `latest`
         # warns early when the plugin API moves; it does not block a merge.
         claude-code: ['2.1.310', 'latest']
     continue-on-error: ${{ matrix.claude-code == 'latest' }}

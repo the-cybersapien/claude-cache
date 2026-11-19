@@ -482,6 +482,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
     await update($, info, i => ({ ...i, isTurnRunning: true }))
     return next(e)
   })

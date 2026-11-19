@@ -132,6 +132,21 @@ test('an idle 1h session compacts once, at 55 minutes', { options: { ttl: '1h' }
   expect(compactions.length).toBe(1)
 })
 
+test('a background subagent cannot keep an idle main turn busy', { options: { ttl: '1h' } }, async ($, on) => {
+  const compactions: string[] = []
+  world(on, compactions)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await runTurn($)
+
+  const child = { turnId: 'child-turn', agentId: 'background-agent' }
+  await $.turn.start({ ...child, text: 'background work' })
+  await $.turn.complete({ ...child, answer: 'done', durationMs: 1000, isAborted: false, reason: 'answer' })
+
+  await clock.advance(55 * MINUTE)
+  expect(compactions.length).toBe(1)
+})
+
 test('/cache off stops this session compacting', { options: { ttl: '1h' } }, async ($, on) => {
   const compactions: string[] = []
   world(on, compactions)
